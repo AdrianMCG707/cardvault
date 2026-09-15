@@ -17,4 +17,55 @@ model User {
   email          String   @unique
   authProviderId String
   createdAt      DateTime @default(now())
+  binders        Binder[]
+}
+
+enum Game {
+  POKEMON
+  YUGIOH
+  LORCANA
+  ONE_PIECE
+}
+
+model Binder {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  name      String
+  game      Game
+  createdAt DateTime  @default(now())
+  holdings  Holding[]
+}
+
+model Card {
+  id             String          @id @default(uuid())
+  externalId     String
+  name           String
+  rarity         String
+  setName        String
+  game           Game
+  imageUrl       String
+  holdings       Holding[]
+  priceSnapshots PriceSnapshot[]
+}
+
+model Holding {
+  id            String   @id @default(uuid())
+  binderId      String
+  binder        Binder   @relation(fields: [binderId], references: [id])
+  cardId        String
+  card          Card     @relation(fields: [cardId], references: [id])
+  quantity      Int
+  condition     String
+  acquiredPrice Decimal
+  addedAt       DateTime @default(now())
+}
+
+model PriceSnapshot {
+  id         String   @id @default(uuid())
+  card       Card     @relation(fields: [cardId], references: [id])
+  cardId     String
+  price      Decimal
+  capturedAt DateTime @default(now())
+  source     String
 }
