@@ -1,10 +1,15 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { verifyToken } from '@clerk/backend';
+import type { Request } from 'express';
+
+interface RequestWithAuth extends Request {
+  auth?: Awaited<ReturnType<typeof verifyToken>>;
+}
 
 @Injectable()
 export class ClerkAuthGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<RequestWithAuth>();
 
     const authHeader = request.headers.authorization;
     if (!authHeader) {
@@ -20,7 +25,7 @@ export class ClerkAuthGuard implements CanActivate {
 
       request.auth = payload;
       return true;
-    } catch (err) {
+    } catch {
       throw new UnauthorizedException('Invalid or expired token');
     }
   }
