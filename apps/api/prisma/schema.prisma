@@ -42,11 +42,16 @@ model Card {
   externalId     String
   name           String
   rarity         String
+  setId          String
   setName        String
+  number         String?
   game           Game
-  imageUrl       String
+  imageUrl       String?
   holdings       Holding[]
   priceSnapshots PriceSnapshot[]
+
+  @@unique([game, externalId])
+  @@index([game, setId])
 }
 
 model Holding {
@@ -55,17 +60,24 @@ model Holding {
   binder        Binder   @relation(fields: [binderId], references: [id])
   cardId        String
   card          Card     @relation(fields: [cardId], references: [id])
-  quantity      Int
+  variantId     String
   condition     String
+  printing      String
+  quantity      Int
   acquiredPrice Decimal
   addedAt       DateTime @default(now())
+
+  @@index([binderId])
 }
 
 model PriceSnapshot {
   id         String   @id @default(uuid())
   card       Card     @relation(fields: [cardId], references: [id])
   cardId     String
+  variantId  String
   price      Decimal
   capturedAt DateTime @default(now())
   source     String
+
+  @@index([variantId, capturedAt])
 }
