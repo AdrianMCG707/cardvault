@@ -107,7 +107,9 @@ export class CardsService implements OnModuleDestroy {
       const raw = await this.redis.get(key);
       return raw ? (JSON.parse(raw) as CardSearchResult) : null;
     } catch (err) {
-      this.logger.warn(`Cache read failed, falling back to API: ${String(err)}`);
+      this.logger.warn(
+        `Cache read failed, falling back to API: ${String(err)}`,
+      );
       return null;
     }
   }
