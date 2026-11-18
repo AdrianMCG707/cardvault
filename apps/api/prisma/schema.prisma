@@ -15,7 +15,7 @@ datasource db {
 model User {
   id             String   @id @default(uuid())
   email          String   @unique
-  authProviderId String
+  authProviderId String   @unique
   createdAt      DateTime @default(now())
   binders        Binder[]
 }
