@@ -27,7 +27,10 @@ export interface CardSearchResult {
   hasMore: boolean;
 }
 
-const SEARCH_CACHE_TTL_SECONDS = 6 * 60 * 60;
+type SdkResponse = Awaited<ReturnType<JustTCG['v1']['cards']['get']>>;
+type SdkCard = SdkResponse['data'][number];
+
+const CACHE_TTL_SECONDS = 6 * 60 * 60;
 
 @Injectable()
 export class CardsService implements OnModuleDestroy {
@@ -56,7 +59,7 @@ export class CardsService implements OnModuleDestroy {
     const safeLimit = Math.min(Math.max(limit, 1), 20);
     const cacheKey = `cards:search:pokemon:${query.toLowerCase()}:${safeLimit}:${offset}`;
 
-    const cached = await this.readCache(cacheKey);
+    const cached = await this.readCache<CardSearchResult>(cacheKey);
     if (cached) {
       this.logger.log(`Cache hit: ${cacheKey}`);
       return cached;
@@ -69,29 +72,10 @@ export class CardsService implements OnModuleDestroy {
       limit: safeLimit,
       offset,
     });
-
-    if (res.usage) {
-      this.logger.log(
-        `JustTCG usage: ${res.usage.apiRequestsUsed}/${res.usage.apiRequestLimit} monthly, ` +
-          `${res.usage.apiDailyRequestsUsed}/${res.usage.apiDailyLimit} daily`,
-      );
-    }
+    this.logUsage(res.usage);
 
     const result: CardSearchResult = {
-      cards: res.data.map((card) => ({
-        externalId: card.id,
-        name: card.name,
-        setId: card.set,
-        setName: card.set_name ?? card.set,
-        number: card.number ?? null,
-        rarity: card.rarity ?? null,
-        variants: card.variants.map((v) => ({
-          variantId: v.id,
-          condition: v.condition,
-          printing: v.printing,
-          price: v.price ?? null,
-        })),
-      })),
+      cards: res.data.map((card) => this.toSummary(card)),
       total: res.pagination?.total ?? res.data.length,
       limit: res.pagination?.limit ?? safeLimit,
       offset: res.pagination?.offset ?? offset,
@@ -102,10 +86,60 @@ export class CardsService implements OnModuleDestroy {
     return result;
   }
 
-  private async readCache(key: string): Promise<CardSearchResult | null> {
+  async getCardById(externalId: string): Promise<CardSummary | null> {
+    const cacheKey = `cards:card:${externalId}`;
+
+    const cached = await this.readCache<CardSummary>(cacheKey);
+    if (cached) {
+      this.logger.log(`Cache hit: ${cacheKey}`);
+      return cached;
+    }
+    this.logger.log(`Cache miss: ${cacheKey}`);
+
+    const res = await this.client.v1.cards.get({ cardId: externalId });
+    this.logUsage(res.usage);
+
+    const found = res.data[0];
+    if (!found || String(found.game).toLowerCase() !== 'pokemon') {
+      return null;
+    }
+
+    const summary = this.toSummary(found);
+    await this.writeCache(cacheKey, summary);
+    return summary;
+  }
+
+  private toSummary(card: SdkCard): CardSummary {
+    return {
+      externalId: card.id,
+      name: card.name,
+      setId: card.set,
+      setName: card.set_name ?? card.set,
+      number: card.number ?? null,
+      rarity: card.rarity ?? null,
+      variants: card.variants.map((v) => ({
+        variantId: v.id,
+        condition: v.condition,
+        printing: v.printing,
+        price: v.price ?? null,
+      })),
+    };
+  }
+
+  private logUsage(usage: SdkResponse['usage']) {
+    if (!usage) {
+      return;
+    }
+    this.logger.log(
+      `JustTCG usage: ${usage.apiRequestsUsed}/${usage.apiRequestLimit} monthly, ` +
+        `${usage.apiDailyRequestsUsed}/${usage.apiDailyLimit} daily`,
+    );
+  }
+
+  private async readCache<T>(key: string): Promise<T | null> {
     try {
       const raw = await this.redis.get(key);
-      return raw ? (JSON.parse(raw) as CardSearchResult) : null;
+      return raw ? (JSON.parse(raw) as T) : null;
     } catch (err) {
       this.logger.warn(
         `Cache read failed, falling back to API: ${String(err)}`,
@@ -114,14 +148,9 @@ export class CardsService implements OnModuleDestroy {
     }
   }
 
-  private async writeCache(key: string, value: CardSearchResult) {
+  private async writeCache(key: string, value: unknown) {
     try {
-      await this.redis.set(
-        key,
-        JSON.stringify(value),
-        'EX',
-        SEARCH_CACHE_TTL_SECONDS,
-      );
+      await this.redis.set(key, JSON.stringify(value), 'EX', CACHE_TTL_SECONDS);
     } catch (err) {
       this.logger.warn(`Cache write failed: ${String(err)}`);
     }
